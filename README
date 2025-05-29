@@ -1,0 +1,306 @@
+# MAX31855 MicroPython Driver
+
+A MicroPython driver for the MAX31855 thermocouple-to-digital converter with SPI interface. This driver supports K-type thermocouples and provides both basic temperature reading and enhanced fault detection capabilities.
+
+## Features
+
+- **Temperature reading** from K-type thermocouples
+- **Cold junction compensation** using internal sensor
+- **Fault detection** for open circuits, shorts, and disconnections
+- **SPI communication** with configurable chip select
+- **Enhanced driver option** with detailed diagnostics
+
+## Hardware Overview
+
+The MAX31855 is a thermocouple-to-digital converter that:
+- Interfaces with K-type thermocouples
+- Provides 14-bit thermocouple resolution (0.25°C)
+- Includes cold-junction compensation
+- Detects thermocouple faults (open, short to GND/VCC)
+- Communicates via SPI (read-only)
+
+### Pin Connections
+
+| MAX31855 Pin | Description | Connect To |
+|--------------|-------------|------------|
+| VCC | Power (3.3V) | Pico 3.3V |
+| GND | Ground | Pico GND |
+| DO (MISO) | Data Output | Pico SPI MISO |
+| CS | Chip Select | Any Pico GPIO |
+| CLK | Clock | Pico SPI SCK |
+| T+ | Thermocouple + | K-type thermocouple red wire |
+| T- | Thermocouple - | K-type thermocouple yellow wire |
+
+## Installation
+
+1. Copy `max31855.py` to your MicroPython device
+2. Import and use in your code:
+
+```python
+from machine import Pin, SPI
+import max31855
+
+# Initialize SPI
+spi = SPI(0, sck=Pin(2), mosi=None, miso=Pin(4), baudrate=5000000)
+
+# Create sensor instance
+sensor = max31855.MAX31855(spi, Pin(5, Pin.OUT))
+
+# Read temperature
+temp = sensor.read_temp_c()
+print(f"Temperature: {temp}°C")
+```
+
+## Basic Driver API
+
+### Class: MAX31855
+
+#### Constructor
+```python
+MAX31855(spi, cs)
+```
+- `spi`: Initialized SPI object
+- `cs`: Chip select Pin object (configured as output)
+
+#### Methods
+
+##### read_temp_c()
+```python
+temp = sensor.read_temp_c()
+```
+Returns the thermocouple temperature in Celsius.
+
+**Returns:**
+- `float`: Temperature in °C if successful
+- `False`: Thermocouple not connected (open circuit)
+- `None`: Other fault condition (short circuit)
+
+##### read_internal_c()
+```python
+internal_temp = sensor.read_internal_c()
+```
+Returns the cold junction (internal) temperature in Celsius.
+
+**Returns:**
+- `float`: Internal temperature in °C
+
+##### read_temp_f()
+```python
+temp_f = sensor.read_temp_f()
+```
+Returns the thermocouple temperature in Fahrenheit.
+
+**Returns:**
+- `float`: Temperature in °F if successful
+- `False`: Thermocouple not connected
+- `None`: Fault condition
+
+## Enhanced Driver API
+
+The enhanced driver provides detailed fault information and diagnostics.
+
+### Additional Methods
+
+##### read_all()
+```python
+data = sensor.read_all()
+```
+Returns comprehensive sensor data and status.
+
+**Returns dictionary with:**
+```python
+{
+    'tc_temp': 25.5,        # Thermocouple temperature (°C)
+    'internal_temp': 22.0,  # Cold junction temperature (°C)
+    'connected': True,      # Thermocouple connection status
+    'fault': None,          # Fault description or None
+    'raw': 0x01900640      # Raw 32-bit data
+}
+```
+
+**Possible fault values:**
+- `None`: No fault
+- `"Open Circuit"`: Thermocouple disconnected
+- `"Short to GND"`: Thermocouple shorted to ground
+- `"Short to VCC"`: Thermocouple shorted to power
+
+##### diagnose()
+```python
+diagnosis = sensor.diagnose()
+```
+Performs comprehensive diagnostics and returns a status string.
+
+**Returns:**
+- `"OK: XX.X°C"`: Normal operation with temperature
+- `"Open Circuit"`: No thermocouple connected
+- `"Short to GND"`: Short circuit to ground
+- `"Short to VCC"`: Short circuit to power
+- `"Unknown Fault"`: Unidentified fault condition
+- `"SPI Error"`: Communication error
+
+## Usage Examples
+
+### Basic Temperature Monitoring
+```python
+from machine import Pin, SPI
+import max31855
+import time
+
+# Setup
+spi = SPI(0, sck=Pin(2), mosi=None, miso=Pin(4), baudrate=5000000)
+sensor = max31855.MAX31855(spi, Pin(5, Pin.OUT))
+
+# Read loop
+while True:
+    temp = sensor.read_temp_c()
+    if temp is False:
+        print("Thermocouple disconnected")
+    elif temp is None:
+        print("Sensor fault")
+    else:
+        print(f"Temperature: {temp:.1f}°C")
+    time.sleep(1)
+```
+
+### Multi-Sensor Setup
+```python
+# Multiple sensors on same SPI bus
+sensors = {
+    'zone1': max31855.MAX31855(spi, Pin(5, Pin.OUT)),
+    'zone2': max31855.MAX31855(spi, Pin(6, Pin.OUT)),
+    'zone3': max31855.MAX31855(spi, Pin(7, Pin.OUT))
+}
+
+for name, sensor in sensors.items():
+    temp = sensor.read_temp_c()
+    print(f"{name}: {temp}°C")
+```
+
+### Enhanced Fault Detection
+```python
+# Using enhanced driver features
+data = sensor.read_all()
+
+if not data['connected']:
+    print("ERROR: Thermocouple not connected")
+elif data['fault']:
+    print(f"FAULT: {data['fault']}")
+else:
+    print(f"Temperature: {data['tc_temp']:.1f}°C")
+    print(f"Cold Junction: {data['internal_temp']:.1f}°C")
+```
+
+### Diagnostic Function
+```python
+# Quick system check
+for name, sensor in sensors.items():
+    status = sensor.diagnose()
+    print(f"{name}: {status}")
+```
+
+## Data Format
+
+The MAX31855 returns 32 bits of data:
+
+```
+[31:18] Thermocouple temperature (14 bits, signed)
+[17]    Reserved
+[16]    Fault bit
+[15:4]  Internal temperature (12 bits, signed)
+[3]     Reserved
+[2]     Short to VCC fault
+[1]     Short to GND fault
+[0]     Open circuit fault
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**Reading shows 0°C or 32°F constantly**
+- Check SPI connections (especially MISO)
+- Verify chip select is correct GPIO
+- Ensure proper power (3.3V)
+
+**Frequent "Open Circuit" errors**
+- Check thermocouple connections
+- Verify thermocouple wire integrity
+- Ensure secure connection to MAX31855 terminals
+
+**Erratic or noisy readings**
+- Add 0.1µF capacitor across thermocouple inputs
+- Use shielded thermocouple wire for long runs
+- Keep thermocouple wires away from power lines
+- Reduce SPI speed if necessary
+
+**"Short to GND/VCC" errors**
+- Check for damaged thermocouple insulation
+- Verify thermocouple isn't touching grounded metal
+- Inspect MAX31855 board for shorts
+
+### SPI Configuration
+
+Recommended SPI settings:
+- **Baudrate**: 5MHz maximum (typically 1-5MHz)
+- **Polarity**: 0 (CPOL=0)
+- **Phase**: 0 (CPHA=0)
+- **Bits**: 8
+- **MSB First**: Yes
+
+### Temperature Range
+
+- **Thermocouple**: -200°C to +1350°C (K-type)
+- **Cold Junction**: -55°C to +125°C
+- **Resolution**: 0.25°C
+
+## Error Handling Best Practices
+
+```python
+def read_temperature_safe(sensor, name="Sensor"):
+    """Read temperature with comprehensive error handling"""
+    try:
+        temp = sensor.read_temp_c()
+        
+        if temp is False:
+            print(f"{name}: Thermocouple disconnected")
+            return None
+        elif temp is None:
+            print(f"{name}: Sensor fault detected")
+            # Try to get more info with enhanced driver
+            if hasattr(sensor, 'read_all'):
+                data = sensor.read_all()
+                if data['fault']:
+                    print(f"  Fault type: {data['fault']}")
+            return None
+        else:
+            return temp
+            
+    except Exception as e:
+        print(f"{name}: Read error - {e}")
+        return None
+```
+
+## Performance Considerations
+
+- **Conversion Time**: ~70-100ms per reading
+- **SPI Transaction**: ~32 bits at configured baudrate
+- **Multiple Sensors**: Can share SPI bus with different CS pins
+- **Polling Rate**: Avoid reading faster than 10Hz per sensor
+
+## License
+
+This driver is typically released under MIT or similar open-source license. Check your specific implementation for details.
+
+## Contributing
+
+When contributing to this driver:
+1. Maintain compatibility with standard MicroPython
+2. Test with actual MAX31855 hardware
+3. Document any new features or methods
+4. Include error handling examples
+
+## Version History
+
+- **Basic Driver**: Original implementation with temperature reading
+- **Enhanced Driver**: Added `read_all()` and `diagnose()` methods
+- **Future**: Consider adding averaging, filtering, and calibration options
