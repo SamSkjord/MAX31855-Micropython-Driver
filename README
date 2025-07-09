@@ -19,7 +19,7 @@ The MAX31855 is a thermocouple-to-digital converter that:
 - Detects thermocouple faults (open, short to GND/VCC)
 - Communicates via SPI (read-only)
 
-### Pin Connections
+### Pin Connections 
 
 | MAX31855 Pin | Description | Connect To |
 |--------------|-------------|------------|
